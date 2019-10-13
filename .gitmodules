@@ -1,0 +1,6 @@
+[submodule "CLEARumor"]
+	path = CLEARumor
+	url = https://github.com/Institute-Web-Science-and-Technologies/CLEARumor.git
+[submodule "bert-mfajcik"]
+	path = RumourEval2019
+	url = https://github.com/MFajcik/RumourEval2019.git
