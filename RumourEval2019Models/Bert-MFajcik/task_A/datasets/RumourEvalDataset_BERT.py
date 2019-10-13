@@ -10,7 +10,7 @@ from torchtext.data import Example
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 """
-This file contains implementation of RumourEval2019 datasets extending torchtext.data.Dataset class
+This file contains implementation of Bert-MFajcik datasets extending torchtext.data.Dataset class
 """
 
 class RumourEval2019Dataset_BERTTriplets(tt.data.Dataset):

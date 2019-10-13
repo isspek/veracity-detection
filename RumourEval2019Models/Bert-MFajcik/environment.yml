@@ -1,4 +1,4 @@
-name: RumourEval2019
+name: Bert-MFajcik
 channels:
   - pytorch
   - anaconda

@@ -29,7 +29,7 @@ class BERT_Framework(Base_Framework):
     """
     Framework implementing BERT training with input pattern:
     [CLS]src post. prev post[SEP]target post[SEP]
-    This is our best model, submitted to RumourEval2019 competition, referred to as BERT_{big} in the paper
+    This is our best model, submitted to Bert-MFajcik competition, referred to as BERT_{big} in the paper
     """
 
     def __init__(self, config: dict, save_treshold: float = 0.52):
