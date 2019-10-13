@@ -28,9 +28,9 @@ from pathlib import Path
 from sys import exit
 from time import time
 from typing import Dict, List, Optional
-from zipfile import ZipFile
-
 from tokenizer.tokenizer import RedditTokenizer, TweetTokenizer
+from RumourEval2019Models.CLEARumor.src.util import get_archive_directory_structure
+from zipfile import ZipFile
 
 DATA_DIR = Path('data')
 
@@ -73,7 +73,6 @@ TOKENIZER_ARGS = {
 }
 TWEET_TOKENIZER = TweetTokenizer(**TOKENIZER_ARGS)
 REDDIT_TOKENIZER = RedditTokenizer(**TOKENIZER_ARGS)
-
 
 class Post:
     """Data class for both Twitter and Reddit posts.
@@ -235,6 +234,7 @@ class Post:
                     upvote_ratio=data.get('upvote_ratio'))
 
 
+
 def load_posts() -> Dict[str, Post]:
     """Loads all Twitter and Reddit posts into a dictionary.
 
@@ -244,107 +244,8 @@ def load_posts() -> Dict[str, Post]:
         A dictionary mapping post IDs to their respective posts.
     """
 
-    def get_archive_directory_structure(archive: ZipFile) -> Dict:
-        """Parses a ZipFile's list of files into a hierarchical representation.
 
-        We need to do this because ZipFile just gives us a list of all files in
-        contains and doesn't provide any methods to check which files lie in a
-        specific subdirectory.
 
-        Args:
-            archive: The archive to parse.
-
-        Returns:
-            A nested dictionary. Keys of this dictionary are either file names
-            which point to their full path in the archive or directory names
-            which again point to a nested dictionary that contains their
-            contents.
-
-        Example:
-            If the archive would contain the following files::
-
-                ['foo.txt',
-                 'bar/bar.log',
-                 'bar/baz.out',
-                 'bar/boogy/text.out']
-
-            This would be transformed into the following hierarchical form::
-
-                {
-                    'foo.txt': 'foo.txt',
-                    'bar': {
-                        'bar.log': 'bar/bar.log',
-                        'baz.out': 'bar/baz.out',
-                        'boogy': {
-                            'text.out': 'bar/boogy/text.out'
-                        }
-                    }
-                }
-        """
-        result = {}
-        for file in archive.namelist():
-            # Skip directories in archive.
-            if file.endswith('/'):
-                continue
-
-            d = result
-            path = file.split('/')[1:]  # [1:] to skip top-level directory.
-            for p in path[:-1]:  # [:-1] to skip filename
-                if p not in d:
-                    d[p] = {}
-                d = d[p]
-            d[path[-1]] = file
-        return result
-
-    def calc_post_depths_from_thread_structure(thread_structure: Dict) \
-            -> Dict[str, int]:
-        """Calculates the nested depth of each post in a thread.
-
-        We determine post depth from the provided `structure.json` files in the
-        dataset because this is easier than following the chain of a post's
-        parents to the source post of a thread.
-
-        Args:
-            thread_structure: The parsed JSON dict from one of the dataset's
-                `structure.json` files.
-
-        Returns:
-            A dictionary mapping post IDs to their nested depth. The source
-            post of a thread always has depth `0`, first level replies `1`, etc.
-
-        Example:
-            If the `thread_structure` would look like the following::
-
-                {
-                    'foo': {
-                        'bar': [],
-                        'baz': {
-                            'boogy': []
-                        },
-                        'qux': []
-                    }
-                }
-
-            The parsed post depths would be::
-
-                {
-                    'foo': 0,
-                    'bar': 1,
-                    'baz': 1,
-                    'boogy': 2,
-                    'qux': 1
-                }
-        """
-        post_depths = {}
-
-        def walk(thread: Dict, depth: int) -> None:
-            for post_id, subthread in thread.items():
-                post_depths[post_id] = depth
-                if isinstance(subthread, Dict):
-                    walk(subthread, depth + 1)
-
-        walk(thread_structure, 0)
-        return post_depths
 
     print('Loading posts...')
     time_before = time()
@@ -361,8 +262,54 @@ def load_posts() -> Dict[str, Post]:
     twitter_en_test_data = test_data_contents['twitter-en-test-data']
     reddit_test_data = test_data_contents['reddit-test-data']
 
-    posts: Dict[str, Post] = {}
 
+
+    twitter_posts = load_from_twitter(test_data_archive, training_data_archive,
+                      twitter_en_test_data, twitter_english)
+
+    # -- Load Reddit posts. ----------------------------------------------------
+    reddit_posts = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
+                     test_data_archive, training_data_archive)
+
+    print('  Number of posts: {:d} (Reddit={:d}, Twitter={:d})'.format(
+        len(len(twitter_posts) + len(reddit_posts)),
+        sum(1 for p in twitter_posts.values() if p.platform == Post.Platform.reddit),
+        sum(1 for p in reddit_posts.values() if p.platform == Post.Platform.twitter)))
+    time_after = time()
+    print('  Took {:.2f}s.'.format(time_after - time_before))
+
+    return twitter_posts + reddit_posts
+
+
+def load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
+                     test_data_archive, training_data_archive):
+    posts: Dict[str, Post] = {}
+    for archive, threads in [(training_data_archive,
+                              chain(reddit_training_data.values(),
+                                    reddit_dev_data.values())),
+                             (test_data_archive, reddit_test_data.values())]:
+        for thread in threads:
+            post_depths = calc_post_depths_from_thread_structure(
+                json.loads(archive.read(thread['structure.json'])))
+
+            source_post = Post.load_from_reddit_dict(
+                json.loads(archive.read(
+                    next(iter(thread['source-tweet'].values())))),
+                post_depths)
+            posts[source_post.id] = source_post
+
+            for reply in thread.get('replies', {}).values():
+                reply_post = Post.load_from_reddit_dict(
+                    json.loads(archive.read(reply)),
+                    post_depths,
+                    source_id=source_post.id)
+                posts[reply_post.id] = reply_post
+    return posts
+
+
+def load_from_twitter(test_data_archive, training_data_archive,
+                      twitter_en_test_data, twitter_english):
+    posts: Dict[str, Post] = {}
     # -- Load Twitter posts ----------------------------------------------------
     for archive, topics in [(training_data_archive, twitter_english.items()),
                             (test_data_archive, twitter_en_test_data.items())]:
@@ -385,36 +332,6 @@ def load_posts() -> Dict[str, Post]:
                         source_id=source_post.id,
                         topic=topic)
                     posts[reply_post.id] = reply_post
-
-    # -- Load Reddit posts. ----------------------------------------------------
-    for archive, threads in [(training_data_archive,
-                              chain(reddit_training_data.values(),
-                                    reddit_dev_data.values())),
-                             (test_data_archive, reddit_test_data.values())]:
-        for thread in threads:
-            post_depths = calc_post_depths_from_thread_structure(
-                json.loads(archive.read(thread['structure.json'])))
-
-            source_post = Post.load_from_reddit_dict(
-                json.loads(archive.read(
-                    next(iter(thread['source-tweet'].values())))),
-                post_depths)
-            posts[source_post.id] = source_post
-
-            for reply in thread.get('replies', {}).values():
-                reply_post = Post.load_from_reddit_dict(
-                    json.loads(archive.read(reply)),
-                    post_depths,
-                    source_id=source_post.id)
-                posts[reply_post.id] = reply_post
-
-    print('  Number of posts: {:d} (Reddit={:d}, Twitter={:d})'.format(
-        len(posts),
-        sum(1 for p in posts.values() if p.platform == Post.Platform.reddit),
-        sum(1 for p in posts.values() if p.platform == Post.Platform.twitter)))
-    time_after = time()
-    print('  Took {:.2f}s.'.format(time_after - time_before))
-
     return posts
 
 
@@ -524,3 +441,98 @@ def load_verif_instances() -> (List[VerifInstance],
             test = load_from_json_dict(json.loads(fin.read()))
 
     return train, dev, test
+
+class Conversation:
+    """Conversation
+
+    Args:
+          id: ID of the conversation
+          posts: list of posts in the conversation
+    """
+
+    def __init__(self,id,posts: List[Post])-> Dict:
+        self.id = id
+        self.posts = posts
+
+def get_conversations_from_archive(training_data:str,test_data:str):
+    print('Loading conversations...')
+    time_before = time()
+
+    training_data_archive = ZipFile(training_data)
+    training_data_contents = get_archive_directory_structure(
+        training_data_archive)
+    twitter_english = training_data_contents['twitter-english']
+    reddit_training_data = training_data_contents['reddit-training-data']
+    reddit_dev_data = training_data_contents['reddit-dev-data']
+
+    test_data_archive = ZipFile(test_data)
+    test_data_contents = get_archive_directory_structure(test_data_archive)
+    twitter_en_test_data = test_data_contents['twitter-en-test-data']
+    reddit_test_data = test_data_contents['reddit-test-data']
+
+    twitter_posts = load_from_twitter(test_data_archive, training_data_archive,
+                      twitter_en_test_data, twitter_english)
+
+    # -- Load Reddit posts. ----------------------------------------------------
+    reddit_posts = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
+                     test_data_archive, training_data_archive)
+
+    print('  Number of posts: {:d} (Reddit={:d}, Twitter={:d})'.format(
+        len(len(twitter_posts) + len(reddit_posts)),
+        sum(1 for p in twitter_posts.values() if p.platform == Post.Platform.reddit),
+        sum(1 for p in reddit_posts.values() if p.platform == Post.Platform.twitter)))
+    time_after = time()
+    print('  Took {:.2f}s.'.format(time_after - time_before))
+
+    return twitter_posts + reddit_posts
+
+def calc_post_depths_from_thread_structure(thread_structure: Dict) \
+        -> Dict[str, int]:
+    """Calculates the nested depth of each post in a thread.
+
+    We determine post depth from the provided `structure.json` files in the
+    dataset because this is easier than following the chain of a post's
+    parents to the source post of a thread.
+
+    Args:
+        thread_structure: The parsed JSON dict from one of the dataset's
+            `structure.json` files.
+
+    Returns:
+        A dictionary mapping post IDs to their nested depth. The source
+        post of a thread always has depth `0`, first level replies `1`, etc.
+
+    Example:
+        If the `thread_structure` would look like the following::
+
+            {
+                'foo': {
+                    'bar': [],
+                    'baz': {
+                        'boogy': []
+                    },
+                    'qux': []
+                }
+            }
+
+        The parsed post depths would be::
+
+            {
+                'foo': 0,
+                'bar': 1,
+                'baz': 1,
+                'boogy': 2,
+                'qux': 1
+            }
+    """
+    post_depths = {}
+
+    def walk(thread: Dict, depth: int) -> None:
+        for post_id, subthread in thread.items():
+            post_depths[post_id] = depth
+            if isinstance(subthread, Dict):
+                walk(subthread, depth + 1)
+
+    walk(thread_structure, 0)
+    return post_depths
+
