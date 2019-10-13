@@ -24,45 +24,11 @@ was deemed more elegant.
 import json
 from enum import Enum
 from itertools import chain
-from pathlib import Path
-from sys import exit
 from time import time
 from typing import Dict, List, Optional
 from tokenizer.tokenizer import RedditTokenizer, TweetTokenizer
-from RumourEval2019Models.CLEARumor.src.util import get_archive_directory_structure
 from zipfile import ZipFile
-
-DATA_DIR = Path('data')
-
-EXTERNAL_DATA_DIR = DATA_DIR / 'external'
-ELMO_WEIGHTS_FILE = (EXTERNAL_DATA_DIR
-                     / 'elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5')
-ELMO_OPTIONS_FILE = (EXTERNAL_DATA_DIR
-                     / 'elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json')
-# ELMO_WEIGHTS_FILE = (EXTERNAL_DATA_DIR
-#                      / 'elmo_2x1024_128_2048cnn_1xhighway_weights.hdf5')
-# ELMO_OPTIONS_FILE = (EXTERNAL_DATA_DIR
-#                      / 'elmo_2x1024_128_2048cnn_1xhighway_options.json')
-TRAINING_DATA_ARCHIVE_FILE = (EXTERNAL_DATA_DIR
-                              / 'rumoureval-2019-training-data.zip')
-TEST_DATA_ARCHIVE_FILE = (EXTERNAL_DATA_DIR
-                          / 'rumoureval-2019-test-data.zip')
-EVALUATION_DATA_FILE = EXTERNAL_DATA_DIR / 'final-eval-key.json'
-EVALUATION_SCRIPT_FILE = EXTERNAL_DATA_DIR / 'home_scorer_macro.py'
-
-
-def check_for_required_external_data_files() -> None:
-    """Checks whether all required external data files are present.
-
-    If not, will print a message to stderr and exit.
-    """
-    for required_file in [ELMO_WEIGHTS_FILE, ELMO_OPTIONS_FILE,
-                          TRAINING_DATA_ARCHIVE_FILE, TEST_DATA_ARCHIVE_FILE,
-                          EVALUATION_SCRIPT_FILE]:
-        if not required_file.exists():
-            exit('Required file "{}" is not present. See the README on how to '
-                 'obtain it.'.format(required_file))
-
+from config_reader import config, get_project_root
 
 TOKENIZER_ARGS = {
     'preserve_case': False,
@@ -73,6 +39,10 @@ TOKENIZER_ARGS = {
 }
 TWEET_TOKENIZER = TweetTokenizer(**TOKENIZER_ARGS)
 REDDIT_TOKENIZER = RedditTokenizer(**TOKENIZER_ARGS)
+
+TRAIN = get_project_root() / config['RumourEval2019']['train']
+TEST = get_project_root() / config['RumourEval2019']['test']
+
 
 class Post:
     """Data class for both Twitter and Reddit posts.
@@ -250,14 +220,14 @@ def load_posts() -> Dict[str, Post]:
     print('Loading posts...')
     time_before = time()
 
-    training_data_archive = ZipFile(TRAINING_DATA_ARCHIVE_FILE)
+    training_data_archive = ZipFile(TRAIN)
     training_data_contents = get_archive_directory_structure(
         training_data_archive)
     twitter_english = training_data_contents['twitter-english']
     reddit_training_data = training_data_contents['reddit-training-data']
     reddit_dev_data = training_data_contents['reddit-dev-data']
 
-    test_data_archive = ZipFile(TEST_DATA_ARCHIVE_FILE)
+    test_data_archive = ZipFile(TEST)
     test_data_contents = get_archive_directory_structure(test_data_archive)
     twitter_en_test_data = test_data_contents['twitter-en-test-data']
     reddit_test_data = test_data_contents['reddit-test-data']
@@ -376,15 +346,15 @@ def load_sdcq_instances() -> (List[SdqcInstance],
         return [SdqcInstance(post_id, SdqcInstance.Label[label])
                 for post_id, label in json_dict['subtaskaenglish'].items()]
 
-    training_data_archive = ZipFile(TRAINING_DATA_ARCHIVE_FILE)
+    training_data_archive = ZipFile(TRAIN)
     train = load_from_json_dict(json.loads(training_data_archive.read(
         'rumoureval-2019-training-data/train-key.json')))
     dev = load_from_json_dict(json.loads(training_data_archive.read(
         'rumoureval-2019-training-data/dev-key.json')))
     test = None
 
-    if EVALUATION_DATA_FILE.exists():
-        with EVALUATION_DATA_FILE.open('rb') as fin:
+    if config['RumourEval2019']['final-key'].exists():
+        with config['RumourEval2019']['final-key'].open('rb') as fin:
             test = load_from_json_dict(json.loads(fin.read()))
 
     return train, dev, test
@@ -429,15 +399,15 @@ def load_verif_instances() -> (List[VerifInstance],
         return [VerifInstance(post_id, VerifInstance.Label[label])
                 for post_id, label in json_dict['subtaskbenglish'].items()]
 
-    training_data_archive = ZipFile(TRAINING_DATA_ARCHIVE_FILE)
+    training_data_archive = ZipFile(TRAIN)
     train = load_from_json_dict(json.loads(training_data_archive.read(
         'rumoureval-2019-training-data/train-key.json')))
     dev = load_from_json_dict(json.loads(training_data_archive.read(
         'rumoureval-2019-training-data/dev-key.json')))
     test = None
 
-    if EVALUATION_DATA_FILE.exists():
-        with EVALUATION_DATA_FILE.open('rb') as fin:
+    if config['RumourEval2019']['file-key'].exists():
+        with config['RumourEval2019']['file-key'].open('rb') as fin:
             test = load_from_json_dict(json.loads(fin.read()))
 
     return train, dev, test
@@ -454,18 +424,17 @@ class Conversation:
         self.id = id
         self.posts = posts
 
-def get_conversations_from_archive(training_data:str,test_data:str):
+def get_conversations_from_archive():
     print('Loading conversations...')
     time_before = time()
-
-    training_data_archive = ZipFile(training_data)
+    training_data_archive = ZipFile(TRAIN)
     training_data_contents = get_archive_directory_structure(
         training_data_archive)
     twitter_english = training_data_contents['twitter-english']
     reddit_training_data = training_data_contents['reddit-training-data']
     reddit_dev_data = training_data_contents['reddit-dev-data']
 
-    test_data_archive = ZipFile(test_data)
+    test_data_archive = ZipFile(TEST)
     test_data_contents = get_archive_directory_structure(test_data_archive)
     twitter_en_test_data = test_data_contents['twitter-en-test-data']
     reddit_test_data = test_data_contents['reddit-test-data']
@@ -478,13 +447,65 @@ def get_conversations_from_archive(training_data:str,test_data:str):
                      test_data_archive, training_data_archive)
 
     print('  Number of posts: {:d} (Reddit={:d}, Twitter={:d})'.format(
-        len(len(twitter_posts) + len(reddit_posts)),
-        sum(1 for p in twitter_posts.values() if p.platform == Post.Platform.reddit),
-        sum(1 for p in reddit_posts.values() if p.platform == Post.Platform.twitter)))
+        (len(twitter_posts) + len(reddit_posts)),
+        len(twitter_posts),
+        len(reddit_posts)))
     time_after = time()
     print('  Took {:.2f}s.'.format(time_after - time_before))
 
-    return twitter_posts + reddit_posts
+    return {**twitter_posts,**reddit_posts}
+
+def get_archive_directory_structure(archive: ZipFile) -> Dict:
+    """Parses a ZipFile's list of files into a hierarchical representation.
+
+    We need to do this because ZipFile just gives us a list of all files in
+    contains and doesn't provide any methods to check which files lie in a
+    specific subdirectory.
+
+    Args:
+        archive: The archive to parse.
+
+    Returns:
+        A nested dictionary. Keys of this dictionary are either file names
+        which point to their full path in the archive or directory names
+        which again point to a nested dictionary that contains their
+        contents.
+
+    Example:
+        If the archive would contain the following files::
+
+            ['foo.txt',
+             'bar/bar.log',
+             'bar/baz.out',
+             'bar/boogy/text.out']
+
+        This would be transformed into the following hierarchical form::
+
+            {
+                'foo.txt': 'foo.txt',
+                'bar': {
+                    'bar.log': 'bar/bar.log',
+                    'baz.out': 'bar/baz.out',
+                    'boogy': {
+                        'text.out': 'bar/boogy/text.out'
+                    }
+                }
+            }
+    """
+    result = {}
+    for file in archive.namelist():
+        # Skip directories in archive.
+        if file.endswith('/'):
+            continue
+
+        d = result
+        path = file.split('/')[1:]  # [1:] to skip top-level directory.
+        for p in path[:-1]:  # [:-1] to skip filename
+            if p not in d:
+                d[p] = {}
+            d = d[p]
+        d[path[-1]] = file
+    return result
 
 def calc_post_depths_from_thread_structure(thread_structure: Dict) \
         -> Dict[str, int]:
