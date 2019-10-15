@@ -26,9 +26,9 @@ from enum import Enum
 from itertools import chain
 from time import time
 from typing import Dict, List, Optional
-from tokenizer.tokenizer import RedditTokenizer, TweetTokenizer
 from zipfile import ZipFile
 from config_reader import config, get_project_root
+from tokenizer.tokenizer import RedditTokenizer, TweetTokenizer
 
 TOKENIZER_ARGS = {
     'preserve_case': False,
@@ -37,6 +37,7 @@ TOKENIZER_ARGS = {
     'preserve_len': False,
     'preserve_url': False,
 }
+
 TWEET_TOKENIZER = TweetTokenizer(**TOKENIZER_ARGS)
 REDDIT_TOKENIZER = RedditTokenizer(**TOKENIZER_ARGS)
 
@@ -79,6 +80,7 @@ class Post:
     def __init__(self,
                  id: str,
                  text: str,
+                 raw_text: str,
                  depth: int,
                  platform: Platform,
                  has_media: bool,
@@ -88,12 +90,14 @@ class Post:
                  followers_count: Optional[int] = None,
                  friends_count: Optional[int] = None,
                  upvote_ratio: Optional[float] = None):
+
         self.id = id
+        self.raw_text = text
 
         if platform == self.Platform.twitter:
-            self.text: List[str] = TWEET_TOKENIZER.tokenize(text)
+            self.text: List[str] = tokenize(text,TWEET_TOKENIZER)
         elif platform == self.Platform.reddit:
-            self.text: List[str] = REDDIT_TOKENIZER.tokenize(text)
+            self.text: List[str] = tokenize(text,REDDIT_TOKENIZER)
         else:
             raise ValueError()
 
@@ -159,6 +163,7 @@ class Post:
         id = twitter_dict['id_str']
         return Post(id=id,
                     text=twitter_dict['text'],
+                    raw_text=twitter_dict['text'],
                     depth=post_depths[id],
                     platform=cls.Platform.twitter,
                     has_media='media' in twitter_dict['entities'],
@@ -196,6 +201,7 @@ class Post:
         id = data['id']
         return Post(id=id,
                     text=data.get('title') or data.get('body') or '',
+                    raw_text=data.get('title') or data.get('body') or '',
                     depth=post_depths[id],
                     platform=cls.Platform.reddit,
                     has_media=('domain' in data
@@ -254,6 +260,7 @@ def load_posts() -> Dict[str, Post]:
 def load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
                      test_data_archive, training_data_archive):
     posts: Dict[str, Post] = {}
+    conversations = {}
     for archive, threads in [(training_data_archive,
                               chain(reddit_training_data.values(),
                                     reddit_dev_data.values())),
@@ -261,25 +268,33 @@ def load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
         for thread in threads:
             post_depths = calc_post_depths_from_thread_structure(
                 json.loads(archive.read(thread['structure.json'])))
-
             source_post = Post.load_from_reddit_dict(
                 json.loads(archive.read(
                     next(iter(thread['source-tweet'].values())))),
                 post_depths)
             posts[source_post.id] = source_post
+            conversations[source_post.id] = {
+                'source': source_post,
+                'replies': []
 
+            }
+            replies = []
             for reply in thread.get('replies', {}).values():
                 reply_post = Post.load_from_reddit_dict(
                     json.loads(archive.read(reply)),
                     post_depths,
                     source_id=source_post.id)
                 posts[reply_post.id] = reply_post
-    return posts
+                conversations[source_post.id]['replies'] = replies.append(reply_post)
+                posts[reply_post.id] = reply_post
+    return posts, conversations
 
 
 def load_from_twitter(test_data_archive, training_data_archive,
                       twitter_en_test_data, twitter_english):
     posts: Dict[str, Post] = {}
+    # conversations dictionary {src_id: source: obj, replies: list[obj]}
+    conversations = {}
     # -- Load Twitter posts ----------------------------------------------------
     for archive, topics in [(training_data_archive, twitter_english.items()),
                             (test_data_archive, twitter_en_test_data.items())]:
@@ -287,22 +302,27 @@ def load_from_twitter(test_data_archive, training_data_archive,
             for thread in threads.values():
                 post_depths = calc_post_depths_from_thread_structure(
                     json.loads(archive.read(thread['structure.json'])))
-
                 source_post = Post.load_from_twitter_dict(
                     json.loads(archive.read(
                         next(iter(thread['source-tweet'].values())))),
                     post_depths,
                     topic=topic)
-                posts[source_post.id] = source_post
+                conversations[source_post.id] = {
+                    'source': source_post,
+                    'replies': []
 
+                }
+                posts[source_post.id] = source_post
+                replies = []
                 for reply in thread.get('replies', {}).values():
                     reply_post = Post.load_from_twitter_dict(
                         json.loads(archive.read(reply)),
                         post_depths,
                         source_id=source_post.id,
                         topic=topic)
+                    conversations[source_post.id]['replies'] = replies.append(reply_post)
                     posts[reply_post.id] = reply_post
-    return posts
+    return posts, conversations
 
 
 class SdqcInstance:
@@ -439,21 +459,15 @@ def get_conversations_from_archive():
     twitter_en_test_data = test_data_contents['twitter-en-test-data']
     reddit_test_data = test_data_contents['reddit-test-data']
 
-    twitter_posts = load_from_twitter(test_data_archive, training_data_archive,
+    _, twitter_conversations = load_from_twitter(test_data_archive, training_data_archive,
                       twitter_en_test_data, twitter_english)
 
     # -- Load Reddit posts. ----------------------------------------------------
-    reddit_posts = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
+    _, reddit_conversations = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
                      test_data_archive, training_data_archive)
 
-    print('  Number of posts: {:d} (Reddit={:d}, Twitter={:d})'.format(
-        (len(twitter_posts) + len(reddit_posts)),
-        len(twitter_posts),
-        len(reddit_posts)))
-    time_after = time()
-    print('  Took {:.2f}s.'.format(time_after - time_before))
-
-    return {**twitter_posts,**reddit_posts}
+    print('{} conversations found. '.format(len(reddit_conversations)+ len(twitter_conversations)))
+    return {**twitter_conversations,**reddit_conversations}
 
 def get_archive_directory_structure(archive: ZipFile) -> Dict:
     """Parses a ZipFile's list of files into a hierarchical representation.
@@ -557,3 +571,5 @@ def calc_post_depths_from_thread_structure(thread_structure: Dict) \
     walk(thread_structure, 0)
     return post_depths
 
+def tokenize(text,tokenizer):
+    return tokenizer.tokenize(text)

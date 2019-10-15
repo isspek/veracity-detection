@@ -32,10 +32,10 @@ from torch.utils.data import Dataset
 from zipfile import ZipFile
 
 
+
 from RumourEval2019Models.CLEARumor.src.dataset import Post, SdqcInstance, VerifInstance
 
 from config_reader import config
-
 
 class ScalingMode(Enum):
     none = 0
@@ -352,5 +352,8 @@ def write_answers_json(
 
     with path.open('w', encoding='UTF-8') as fout:
         json.dump(answers, fout, indent=2)
+
+
+
 
 
