@@ -14,3 +14,6 @@ config.read(root/'config.ini')
 
 def get_final_key():
     return root/config['RumourEval2019']['final-key']
+
+def get_dataframe_path():
+    return root/config['RumourEval2019']['dataframes']

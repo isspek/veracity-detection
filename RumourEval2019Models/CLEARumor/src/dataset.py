@@ -93,6 +93,7 @@ class Post:
                  followers_count: Optional[int] = None,
                  friends_count: Optional[int] = None,
                  created_at: Optional[str] = None,
+                 user_name: Optional[str] = None,
                  upvote_ratio: Optional[float] = None):
 
         self.id = id
@@ -115,6 +116,7 @@ class Post:
         self.friends_count = friends_count
         self.upvote_ratio = upvote_ratio
         self.created_at = created_at
+        self.user_name = user_name
 
     @property
     def has_source_depth(self) -> bool:
@@ -177,7 +179,9 @@ class Post:
                     user_verified=twitter_dict['user']['verified'],
                     followers_count=twitter_dict['user']['followers_count'],
                     friends_count=twitter_dict['user']['friends_count'],
-                    created_at=to_datetime(twitter_dict['created_at']))
+                    user_name = twitter_dict['user']['screen_name'],
+                    # created_at=to_datetime(twitter_dict['created_at']))
+                    created_at = twitter_dict['created_at'])
 
     @classmethod
     def load_from_reddit_dict(cls,

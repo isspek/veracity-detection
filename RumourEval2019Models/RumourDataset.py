@@ -35,11 +35,11 @@ class SDQCDataset(Dataset):
 
         def __init__(self, id: str, conversation, label: Optional[Label] = None):
             self.id = id
-            self.conversations = conversation
-            self.label = label
+            self.conversation = conversation
+            self.label = label.name
 
         def __repr__(self):
-            return 'SDQC ({}, {})'.format(self.conversations, self.label)
+            return 'SDQC ({}, {})'.format(self.conversation, self.label)
 
     def _init_dataset(self, conversations):
         train_instances, dev_instances, test_instances = load_sdcq_instances()
@@ -76,7 +76,7 @@ class SDQCDataset(Dataset):
 
 
 class VerifDataset(Dataset):
-    def __init__(self, conversation):
+    def __init__(self, conversations):
         self.train = []
         self.dev = []
         self.test = []
@@ -92,7 +92,7 @@ class VerifDataset(Dataset):
         def __init__(self, id, conversation, label: Optional[Label] = None):
             self.id = id
             self.conversation = conversation
-            self.label = label
+            self.label = label.name
 
         def __str__(self):
             print('Verif ({}, {})'.format(self.conversation, self.label))
@@ -108,8 +108,6 @@ class VerifDataset(Dataset):
         for instance in test_instances:
             self.test.append(self.VerifInstance(instance.post_id, conversations.get(instance.post_id), instance.label))
 
-
 if __name__ == '__main__':
     conversations = get_conversations_from_archive()
     rumour_dataset = RumourDataset(conversations)
-    print(rumour_dataset.sdqc_dataset.test)
