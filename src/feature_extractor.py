@@ -54,6 +54,9 @@ class FeatureExtractor:
     def transform(self, *args):
         pass
 
+    def embedding_similarity(self):
+        pass
+
     '@todo make callback functions as input'
     def pipeline(self, text:str)->str:
         text = self.extract_url(text)

@@ -29,6 +29,9 @@ from typing import Dict, List, Optional
 from zipfile import ZipFile
 from config_reader import config, get_project_root
 from tokenizer.tokenizer import RedditTokenizer, TweetTokenizer
+from datetime import datetime, timedelta
+from email.utils import parsedate_tz
+import config_reader
 
 TOKENIZER_ARGS = {
     'preserve_case': False,
@@ -89,6 +92,7 @@ class Post:
                  user_verified: Optional[bool] = None,
                  followers_count: Optional[int] = None,
                  friends_count: Optional[int] = None,
+                 created_at: Optional[str] = None,
                  upvote_ratio: Optional[float] = None):
 
         self.id = id
@@ -110,6 +114,7 @@ class Post:
         self.followers_count = followers_count
         self.friends_count = friends_count
         self.upvote_ratio = upvote_ratio
+        self.created_at = created_at
 
     @property
     def has_source_depth(self) -> bool:
@@ -171,7 +176,8 @@ class Post:
                     topic=topic,
                     user_verified=twitter_dict['user']['verified'],
                     followers_count=twitter_dict['user']['followers_count'],
-                    friends_count=twitter_dict['user']['friends_count'])
+                    friends_count=twitter_dict['user']['friends_count'],
+                    created_at=to_datetime(twitter_dict['created_at']))
 
     @classmethod
     def load_from_reddit_dict(cls,
@@ -207,7 +213,8 @@ class Post:
                     has_media=('domain' in data
                                and not data['domain'].startswith('self.')),
                     source_id=source_id,
-                    upvote_ratio=data.get('upvote_ratio'))
+                    upvote_ratio=data.get('upvote_ratio'),
+                    created_at=data.get('created_utc'))
 
 
 
@@ -278,14 +285,13 @@ def load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
                 'replies': []
 
             }
-            replies = []
             for reply in thread.get('replies', {}).values():
                 reply_post = Post.load_from_reddit_dict(
                     json.loads(archive.read(reply)),
                     post_depths,
                     source_id=source_post.id)
                 posts[reply_post.id] = reply_post
-                conversations[source_post.id]['replies'] = replies.append(reply_post)
+                conversations.get(source_post.id).get('replies').append(reply_post)
                 posts[reply_post.id] = reply_post
     return posts, conversations
 
@@ -313,16 +319,20 @@ def load_from_twitter(test_data_archive, training_data_archive,
 
                 }
                 posts[source_post.id] = source_post
-                replies = []
                 for reply in thread.get('replies', {}).values():
                     reply_post = Post.load_from_twitter_dict(
                         json.loads(archive.read(reply)),
                         post_depths,
                         source_id=source_post.id,
                         topic=topic)
-                    conversations[source_post.id]['replies'] = replies.append(reply_post)
+                    conversations.get(source_post.id).get('replies').append(reply_post)
                     posts[reply_post.id] = reply_post
     return posts, conversations
+
+def to_datetime(datestring):
+    time_tuple = parsedate_tz(datestring.strip())
+    dt = datetime(*time_tuple[:6])
+    return dt - timedelta(seconds=time_tuple[-1])
 
 
 class SdqcInstance:
@@ -373,8 +383,8 @@ def load_sdcq_instances() -> (List[SdqcInstance],
         'rumoureval-2019-training-data/dev-key.json')))
     test = None
 
-    if config['RumourEval2019']['final-key'].exists():
-        with config['RumourEval2019']['final-key'].open('rb') as fin:
+    if  config_reader.get_final_key().exists():
+        with config_reader.get_final_key().open('rb') as fin:
             test = load_from_json_dict(json.loads(fin.read()))
 
     return train, dev, test
@@ -426,8 +436,8 @@ def load_verif_instances() -> (List[VerifInstance],
         'rumoureval-2019-training-data/dev-key.json')))
     test = None
 
-    if config['RumourEval2019']['file-key'].exists():
-        with config['RumourEval2019']['file-key'].open('rb') as fin:
+    if  config_reader.get_final_key().exists():
+        with config_reader.get_final_key().open('rb') as fin:
             test = load_from_json_dict(json.loads(fin.read()))
 
     return train, dev, test
