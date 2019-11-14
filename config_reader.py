@@ -17,3 +17,17 @@ def get_final_key():
 
 def get_dataframe_path():
     return root/config['RumourEval2019']['dataframes']
+
+
+def get_badwords():
+    return root/config['RumourEval2019']['badwords']
+
+def get_negative_smileys():
+    return root/config['RumourEval2019']['negative_smileys']
+
+def get_positive_smileys():
+    return root/config['RumourEval2019']['positive_smileys']
+
+
+def get_word2vec_pretrain():
+    return root/config['RumourEval2019']['word_embeddings']

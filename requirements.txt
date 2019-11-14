@@ -1,3 +1,4 @@
 torch
 pandas
 seaborn
+bert-serving-client

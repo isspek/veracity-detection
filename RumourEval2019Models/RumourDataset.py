@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 from RumourEval2019Models.CLEARumor.src.dataset import get_conversations_from_archive
 from RumourEval2019Models.CLEARumor.src.dataset import load_sdcq_instances
 from RumourEval2019Models.CLEARumor.src.dataset import load_verif_instances
+from RumourEval2019Models.CLEARumor.src.dataset import Post
 from typing import Optional
 from enum import Enum
 
@@ -17,6 +18,11 @@ class RumourDataset(Dataset):
         self.verif_dataset = VerifDataset(self.conversations)
         self.sdqc_dataset = SDQCDataset(self.conversations)
 
+    def get_sdqc(self):
+        return self.sdqc_dataset
+
+    def get_verif(self):
+        return self.verif_dataset
 
 class SDQCDataset(Dataset):
     def __init__(self, conversations):
@@ -33,10 +39,12 @@ class SDQCDataset(Dataset):
             query = 2
             comment = 3
 
-        def __init__(self, id: str, conversation, label: Optional[Label] = None):
+        def __init__(self, id: str, post: [Post],source_post:Optional[Post],prev_post:Optional[Post],label: Optional[Label] = None):
             self.id = id
-            self.conversation = conversation
+            self.post = post
             self.label = label.name
+            self.source_post = source_post
+            self.prev_post = prev_post
 
         def __repr__(self):
             return 'SDQC ({}, {})'.format(self.conversation, self.label)
@@ -48,32 +56,40 @@ class SDQCDataset(Dataset):
             label = next((x.label for x in train_instances if x.post_id == source.id), None)
 
             if label:
-                self.train.append(self.SDQCInstance(source.id, source, label))
+                self.train.append(self.SDQCInstance(source.id, source,None, None,label))
                 replies = conversation['replies']
 
-                for reply in replies:
-                    label = next((x.label for x in train_instances if x.post_id == reply.id))
-                    self.train.append(self.SDQCInstance(reply.id, reply, label))
+                for i in range(len(replies)):
+                    label = next((x.label for x in train_instances if x.post_id == replies[i].id))
+                    if i == 0:
+                        self.train.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post= None, label=label))
+                    else:
+                        self.train.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post=replies[i-1], label=label))
             else:
                 # try for dev
                 label = next((x.label for x in dev_instances if x.post_id == source.id), None)
                 if label:
-                    self.dev.append(self.SDQCInstance(source.id, source, label))
+                    self.dev.append(self.SDQCInstance(source.id, source,None, None,label))
                     replies = conversation['replies']
 
-                    for reply in replies:
-                        label = next((x.label for x in dev_instances if x.post_id == reply.id))
-                        self.dev.append(self.SDQCInstance(reply.id, reply, label))
+                    for i in range(len(replies)):
+                        label = next((x.label for x in dev_instances if x.post_id == replies[i].id))
+                        if i == 0:
+                            self.dev.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post= None, label=label))
+                        else:
+                            self.dev.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post=replies[i-1], label=label))
                 else:
                     # try for test
                     label = next((x.label for x in test_instances if x.post_id == source.id), None)
-                    self.test.append(self.SDQCInstance(source.id, source, label))
+                    self.test.append(self.SDQCInstance(source.id, source,None, None, label))
                     replies = conversation['replies']
 
-                    for reply in replies:
-                        label = next((x.label for x in test_instances if x.post_id == reply.id))
-                        self.test.append(self.SDQCInstance(reply.id, reply, label))
-
+                    for i in range(len(replies)):
+                        label = next((x.label for x in test_instances if x.post_id == replies[i].id))
+                        if i==0:
+                            self.test.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post= None, label=label))
+                        else:
+                            self.test.append(self.SDQCInstance(replies[i].id, post=replies[i], source_post=source, prev_post=replies[i-1], label=label))
 
 class VerifDataset(Dataset):
     def __init__(self, conversations):

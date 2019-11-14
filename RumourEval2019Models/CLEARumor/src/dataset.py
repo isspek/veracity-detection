@@ -265,7 +265,7 @@ def load_posts() -> Dict[str, Post]:
     time_after = time()
     print('  Took {:.2f}s.'.format(time_after - time_before))
 
-    return twitter_posts + reddit_posts
+    return {**twitter_posts,**reddit_posts}
 
 
 def load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
@@ -473,11 +473,11 @@ def get_conversations_from_archive():
     twitter_en_test_data = test_data_contents['twitter-en-test-data']
     reddit_test_data = test_data_contents['reddit-test-data']
 
-    _, twitter_conversations = load_from_twitter(test_data_archive, training_data_archive,
+    tw_posts, twitter_conversations = load_from_twitter(test_data_archive, training_data_archive,
                       twitter_en_test_data, twitter_english)
 
     # -- Load Reddit posts. ----------------------------------------------------
-    _, reddit_conversations = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
+    reddit_posts, reddit_conversations = load_from_reddit(reddit_dev_data, reddit_test_data, reddit_training_data,
                      test_data_archive, training_data_archive)
 
     print('{} conversations found. '.format(len(reddit_conversations)+ len(twitter_conversations)))
